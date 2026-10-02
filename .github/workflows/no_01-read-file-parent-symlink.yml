@@ -31,7 +31,19 @@ jobs:
         run: |
           set -euo pipefail
           test "$(readlink downloads)" = '.git'
+          test "$(git ls-files -s downloads | awk '{print $1}')" = '120000'
           test ! -e no_01-read-file-rce-marker.txt
+
+          set +e
+          final_symlink_control="$("$GH_BIN" repo read-file config \
+            --repo '${{ github.repository }}' \
+            --ref '${{ github.sha }}' \
+            --output downloads \
+            --clobber 2>&1)"
+          final_symlink_rc=$?
+          set -e
+          test "$final_symlink_rc" -ne 0
+          grep -F 'output path is a symlink' <<<"$final_symlink_control"
 
           "$GH_BIN" repo read-file config \
             --repo '${{ github.repository }}' \
@@ -43,6 +55,8 @@ jobs:
           git status --short >/dev/null
           test "$(cat no_01-read-file-rce-marker.txt)" = 'GH_READ_FILE_PARENT_SYMLINK_RCE'
 
+          echo 'NO_01_FINAL_SYMLINK_CONTROL=blocked'
+          echo 'NO_01_COMMITTED_SYMLINK_MODE=120000'
           echo 'NO_01_PARENT_SYMLINK_FOLLOWED=true'
           echo 'NO_01_GIT_CONFIG_OVERWRITTEN=true'
           echo 'NO_01_GIT_STATUS_EXECUTED_PAYLOAD=true'
